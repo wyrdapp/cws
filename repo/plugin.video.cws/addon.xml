@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="plugin.video.webshare"
+       name="Stream Cinema Webshare"
+       version="1.1.0"
+       provider-name="Webshare">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+  </requires>
+  <extension point="xbmc.python.pluginsource" library="default.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en">Stream Cinema - movies and series from Webshare.cz</summary>
+    <description lang="en">Stream Cinema Webshare - browse, search and play movies and series from Webshare.cz with TMDB integration and smart quality selection.</description>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+    <platform>all</platform>
+    <license>MIT</license>
+  </extension>
+</addon>
