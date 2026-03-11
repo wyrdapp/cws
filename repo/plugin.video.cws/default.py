@@ -394,7 +394,8 @@ def seasons(params: dict):
         num   = s.get("season_number", 0)
         if num == 0:
             continue
-        label = f"Sezóna {num}"
+        air_year = (s.get("air_date") or "")[:4]
+        label = f"Sezóna {num} ({air_year})" if air_year else f"Sezóna {num}"
         li    = xbmcgui.ListItem(label)
         li.setArt({"poster": s.get("poster_path") and
                    f"https://image.tmdb.org/t/p/w500{s['poster_path']}" or ""})
