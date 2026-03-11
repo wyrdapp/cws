@@ -25,7 +25,7 @@
 
   <addon id="plugin.video.cws"
          name="Stream Cinema"
-         version="1.1.0"
+         version="1.2.0"
          provider-name="wyrdapp">
     <requires>
       <import addon="xbmc.python" version="3.0.0"/>
