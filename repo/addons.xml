@@ -10,9 +10,9 @@
     </requires>
     <extension point="xbmc.addon.repository" name="CWS Repository">
       <dir>
-        <info compressed="false">https://raw.githubusercontent.com/wyrdapp/cws/main/repo/addons.xml</info>
-        <checksum>https://raw.githubusercontent.com/wyrdapp/cws/main/repo/addons.xml.md5</checksum>
-        <datadir zip="true">https://raw.githubusercontent.com/wyrdapp/cws/main/repo</datadir>
+        <info compressed="false">https://wyrdapp.github.io/cws/repo/addons.xml</info>
+        <checksum>https://wyrdapp.github.io/cws/repo/addons.xml.md5</checksum>
+        <datadir zip="true">https://wyrdapp.github.io/cws/repo</datadir>
       </dir>
     </extension>
     <extension point="xbmc.addon.metadata">
