@@ -15,6 +15,7 @@ Routing přes URL parametry:
   action=play                → přehrát konkrétní Webshare soubor
 """
 
+import os
 import sys
 from urllib.parse import parse_qsl, urlencode, quote_plus, unquote_plus
 
@@ -22,6 +23,7 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 import xbmcplugin
+import xbmcvfs
 
 sys.path.insert(0, xbmcaddon.Addon().getAddonInfo("path") + "/lib")
 
@@ -175,6 +177,7 @@ def main_menu():
         ("Populární seriály",                   url(action="browse_list", type="series", category="popular", page="1")),
         ("Nejlépe hodnocené seriály",           url(action="browse_list", type="series", category="top_rated", page="1")),
         ("Filmy podle žánru",                   url(action="browse")),
+        ("Stažené soubory",                     url(action="downloads")),
     ]
     for label, target in items:
         li = xbmcgui.ListItem(label)
@@ -606,6 +609,15 @@ def select_stream(params: dict):
         if desc:
             li.setInfo("video", {"title": label, "plot": desc, "mediatype": "video"})
 
+        dl_url = url(
+            action="download",
+            ident=fdata["ident"],
+            filename=encode(fdata.get("name", "file")),
+        )
+        li.addContextMenuItems([
+            ("Stáhnout pro offline", f"RunPlugin({dl_url})"),
+        ])
+
         target = url(
             action="play",
             ident=fdata["ident"],
@@ -620,6 +632,14 @@ def select_stream(params: dict):
             stream_label=encode(label),
         )
         xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
+
+        # Download button as separate list item
+        dl_li = xbmcgui.ListItem(f"[I][Stáhnout] {label}[/I]")
+        dl_li.setInfo("video", {"title": f"Stáhnout: {label}", "mediatype": "video"})
+        dl_li.setProperty("IsPlayable", "false")
+        if art:
+            dl_li.setArt(art)
+        xbmcplugin.addDirectoryItem(HANDLE, dl_url, dl_li, isFolder=False)
 
     xbmcplugin.endOfDirectory(HANDLE)
 
@@ -821,6 +841,152 @@ def clear_history(params: dict):
 # Router
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Download for offline playback
+# ---------------------------------------------------------------------------
+
+def download_file(params: dict):
+    """Download a Webshare file to the user-configured folder."""
+    import requests as _requests
+
+    dl_folder = setting("download_folder")
+    if not dl_folder:
+        xbmcgui.Dialog().ok(
+            "Stahování",
+            "Nastav složku pro stahování v nastavení addonu.",
+        )
+        xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
+        return
+
+    ws = get_ws()
+    if not ws:
+        return
+
+    ident = params.get("ident", "")
+    filename = decode(params.get("filename", "file"))
+    if not ident:
+        log("download_file: missing ident", xbmc.LOGERROR)
+        return
+
+    try:
+        link = ws.file_download_link(ident)
+    except Exception as e:
+        log(f"download_file: link error: {e}", xbmc.LOGERROR)
+        xbmcgui.Dialog().ok("Stahování", f"Nelze získat odkaz:\n{e}")
+        return
+
+    dest = os.path.join(dl_folder, filename)
+    if xbmcvfs.exists(dest):
+        if not xbmcgui.Dialog().yesno(
+            "Stahování", f"Soubor už existuje:\n{filename}\n\nPřepsat?"
+        ):
+            return
+
+    log(f"download_file: {filename} → {dest}")
+    progress = xbmcgui.DialogProgress()
+    progress.create("Stahování", f"Stahuji: {filename}")
+
+    try:
+        resp = _requests.get(link, stream=True, timeout=30)
+        resp.raise_for_status()
+        total = int(resp.headers.get("content-length", 0))
+        downloaded = 0
+        chunk_size = 64 * 1024
+
+        with open(xbmcvfs.translatePath(dest), "wb") as f:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if progress.iscanceled():
+                    log("download_file: cancelled by user")
+                    f.close()
+                    xbmcvfs.delete(dest)
+                    xbmcgui.Dialog().notification(
+                        "Stahování", "Stahování zrušeno", xbmcgui.NOTIFICATION_WARNING
+                    )
+                    return
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct = int(downloaded * 100 / total)
+                    mb_done = downloaded / (1024 * 1024)
+                    mb_total = total / (1024 * 1024)
+                    progress.update(pct, f"Stahuji: {filename}",
+                                    f"{mb_done:.1f} / {mb_total:.1f} MB")
+    except Exception as e:
+        log(f"download_file: error: {e}", xbmc.LOGERROR)
+        progress.close()
+        xbmcgui.Dialog().ok("Stahování", f"Chyba při stahování:\n{e}")
+        return
+
+    progress.close()
+    xbmcgui.Dialog().notification(
+        "Stahování", f"Staženo: {filename}", xbmcgui.NOTIFICATION_INFO
+    )
+    log(f"download_file: done, {downloaded} bytes")
+
+
+def browse_downloads(params: dict):
+    """List downloaded files for offline playback."""
+    dl_folder = setting("download_folder")
+    if not dl_folder:
+        xbmcgui.Dialog().ok(
+            "Stažené soubory",
+            "Nastav složku pro stahování v nastavení addonu.",
+        )
+        xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
+
+    real_path = xbmcvfs.translatePath(dl_folder)
+    if not os.path.isdir(real_path):
+        xbmcgui.Dialog().ok("Stažené soubory", "Složka neexistuje.")
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
+
+    video_exts = {".mkv", ".avi", ".mp4", ".m4v", ".mov", ".wmv", ".ts", ".flv", ".webm"}
+    files = []
+    for fname in os.listdir(real_path):
+        ext = os.path.splitext(fname)[1].lower()
+        if ext in video_exts:
+            fpath = os.path.join(real_path, fname)
+            size_mb = os.path.getsize(fpath) / (1024 * 1024)
+            files.append((fname, fpath, size_mb))
+    files.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
+
+    if not files:
+        xbmcgui.Dialog().ok("Stažené soubory", "Žádné stažené soubory.")
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
+
+    xbmcplugin.setContent(HANDLE, "videos")
+    for fname, fpath, size_mb in files:
+        label = f"{fname}  [{size_mb:.0f} MB]"
+        li = xbmcgui.ListItem(label)
+        li.setProperty("IsPlayable", "true")
+        li.setInfo("video", {"title": fname, "mediatype": "video"})
+        li.addContextMenuItems([
+            ("Smazat soubor", f"RunPlugin({url(action='delete_download', path=encode(fpath))})"),
+        ])
+        xbmcplugin.addDirectoryItem(HANDLE, fpath, li, isFolder=False)
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=True, cacheToDisc=False)
+
+
+def delete_download(params: dict):
+    """Delete a downloaded file."""
+    fpath = decode(params.get("path", ""))
+    if not fpath:
+        return
+    fname = os.path.basename(fpath)
+    if xbmcgui.Dialog().yesno("Smazat", f"Opravdu smazat?\n{fname}"):
+        try:
+            xbmcvfs.delete(fpath)
+            xbmcgui.Dialog().notification(
+                "Stažené soubory", f"Smazáno: {fname}", xbmcgui.NOTIFICATION_INFO
+            )
+            xbmc.executebuiltin("Container.Refresh")
+        except Exception as e:
+            log(f"delete_download error: {e}", xbmc.LOGERROR)
+
+
 def router(params: dict):
     action = params.get("action", "main")
     log(f"action={action} params={params}")
@@ -838,6 +1004,9 @@ def router(params: dict):
         "history":        lambda: show_history(params),
         "continue_series": lambda: continue_series(params),
         "clear_history":  lambda: clear_history(params),
+        "download":       lambda: download_file(params),
+        "downloads":      lambda: browse_downloads(params),
+        "delete_download": lambda: delete_download(params),
         "settings":       lambda: _do_settings(),
     }
     handler = dispatch.get(action)

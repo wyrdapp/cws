@@ -181,6 +181,29 @@ class WebshareClient:
             raise RuntimeError(f"Webshare link error: {err}")
         return link
 
+    def file_download_link(self, ident: str) -> str:
+        """Get a direct download link (as opposed to a streaming link)."""
+        root = self._authed("file_link", {
+            "ident": ident,
+            "download_type": "file_download",
+            "force_https": 1,
+        })
+        if root.findtext("status") != "OK":
+            msg = root.findtext("message") or "neznámá chyba"
+            raise RuntimeError(f"file_download_link error: {msg}")
+        link = root.findtext("link") or ""
+        if "?error=" in link or "&error=" in link:
+            import re
+            m = re.search(r"[?&]error=([^&/]+)", link)
+            err = m.group(1) if m else "UNKNOWN"
+            if err in ("UNKNOWN", "NOT_ALLOWED", "LIMIT_EXCEEDED"):
+                raise RuntimeError(
+                    "Webshare vyžaduje VIP účet pro stahování.\n"
+                    "Pořiď si předplatné na webshare.cz."
+                )
+            raise RuntimeError(f"Webshare link error: {err}")
+        return link
+
     def file_info(self, ident: str) -> dict:
         root = self._authed("file_info", {"ident": ident})
         return {

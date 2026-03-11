@@ -15,4 +15,8 @@
     <setting label="Automaticky přehrát nejlepší stream" type="bool"
              id="auto_play_best" default="false"/>
   </category>
+  <category label="Stahování">
+    <setting label="Složka pro stažené soubory" type="folder" id="download_folder"
+             source="auto" default="" option="writeable"/>
+  </category>
 </settings>
