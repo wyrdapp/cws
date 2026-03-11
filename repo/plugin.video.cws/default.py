@@ -200,17 +200,20 @@ def main_menu():
 def _suggest_query(prompt: str) -> str:
     """Show keyboard input, then offer Webshare suggestions if available."""
     query = xbmcgui.Dialog().input(prompt, type=xbmcgui.INPUT_ALPHANUM)
+    log(f"_suggest_query: keyboard returned {query!r}")
     if not query:
         return ""
     ws = get_ws()
     if ws:
         try:
             suggestions = ws.suggest(query, limit=8)
+            log(f"_suggest_query: suggestions={suggestions}")
             if suggestions:
                 choices = [query] + [s for s in suggestions if s != query]
                 idx = xbmcgui.Dialog().select(
                     "Vyberte hledaný výraz", choices
                 )
+                log(f"_suggest_query: user selected idx={idx}")
                 if idx >= 0:
                     return choices[idx]
         except Exception as e:
@@ -222,15 +225,24 @@ def search_movies(params: dict):
     query = decode(params.get("query", ""))
     if not query:
         query = _suggest_query("Hledat filmy")
+    log(f"search_movies: query={query!r}")
     if not query:
+        log("search_movies: empty query, aborting")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     tmdb_c = get_tmdb()
     if not tmdb_c:
+        log("search_movies: no TMDB client")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     page = int(params.get("page", 1))
-    data = tmdb_c.search_movies(query, page=page)
+    try:
+        data = tmdb_c.search_movies(query, page=page)
+        log(f"search_movies: TMDB returned {len(data.get('results', []))} results")
+    except Exception as e:
+        log(f"search_movies: TMDB error: {e}", xbmc.LOGERROR)
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
     params["query"] = encode(query)
     _render_movie_list(tmdb_c, data, params, "select_stream")
 
@@ -239,15 +251,24 @@ def search_series(params: dict):
     query = decode(params.get("query", ""))
     if not query:
         query = _suggest_query("Hledat seriály")
+    log(f"search_series: query={query!r}")
     if not query:
+        log("search_series: empty query, aborting")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     tmdb_c = get_tmdb()
     if not tmdb_c:
+        log("search_series: no TMDB client")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     page = int(params.get("page", 1))
-    data = tmdb_c.search_tv(query, page=page)
+    try:
+        data = tmdb_c.search_tv(query, page=page)
+        log(f"search_series: TMDB returned {len(data.get('results', []))} results")
+    except Exception as e:
+        log(f"search_series: TMDB error: {e}", xbmc.LOGERROR)
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
     params["query"] = encode(query)
     _render_series_list(tmdb_c, data, params)
 
@@ -312,13 +333,23 @@ def _render_movie_list(tmdb: TMDBClient, data: dict, params: dict, stream_action
 
 
 def _render_series_list(tmdb: TMDBClient, data: dict, params: dict):
-    xbmcplugin.setContent(HANDLE, "tvshows")
+    xbmcplugin.setContent(HANDLE, "videos")
+    count = 0
     for s in data.get("results", []):
-        info = tmdb.tv_result_to_info(s)
-        target, li, is_folder = make_media_item(info, "select_stream")
-        xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=is_folder)
+        try:
+            info = tmdb.tv_result_to_info(s)
+            target, li, is_folder = make_media_item(info, "select_stream")
+            ok = xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=is_folder)
+            if ok:
+                count += 1
+            else:
+                log(f"_render_series_list: addDirectoryItem returned False for {info.get('title')}")
+        except Exception as e:
+            log(f"_render_series_list item error: {e}", xbmc.LOGERROR)
     _add_next_page(data, params)
-    xbmcplugin.endOfDirectory(HANDLE)
+    log(f"_render_series_list: added {count} items, calling endOfDirectory")
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=True, updateListing=False, cacheToDisc=False)
+    log("_render_series_list: endOfDirectory done")
 
 
 def _add_next_page(data: dict, params: dict):
@@ -339,16 +370,27 @@ def _add_next_page(data: dict, params: dict):
 def seasons(params: dict):
     tmdb_obj = get_tmdb()
     if not tmdb_obj:
+        log("seasons: no TMDB client")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     tmdb_id = int(params.get("tmdb_id", 0))
-    detail  = tmdb_obj.tv_detail(tmdb_id)
+    log(f"seasons: fetching detail for tmdb_id={tmdb_id}")
+    try:
+        detail = tmdb_obj.tv_detail(tmdb_id)
+    except Exception as e:
+        log(f"seasons: tv_detail error: {e}", xbmc.LOGERROR)
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
     imdb_id = params.get("imdb_id", "")
     if not imdb_id:
         imdb_id = encode(detail.get("external_ids", {}).get("imdb_id", ""))
 
-    xbmcplugin.setContent(HANDLE, "seasons")
-    for s in detail.get("seasons", []):
+    all_seasons = detail.get("seasons", [])
+    log(f"seasons: got {len(all_seasons)} seasons, imdb_id={imdb_id}")
+
+    xbmcplugin.setContent(HANDLE, "videos")
+    count = 0
+    for s in all_seasons:
         num   = s.get("season_number", 0)
         if num == 0:
             continue
@@ -373,20 +415,33 @@ def seasons(params: dict):
             year=params.get("year", ""),
         )
         xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=True)
-    xbmcplugin.endOfDirectory(HANDLE)
+        count += 1
+    log(f"seasons: added {count} seasons")
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=True, updateListing=False, cacheToDisc=False)
 
 
 def episodes(params: dict):
     tmdb_obj = get_tmdb()
     if not tmdb_obj:
+        log("episodes: no TMDB client")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     tmdb_id = int(params.get("tmdb_id", 0))
     season  = int(params.get("season", 1))
-    data    = tmdb_obj.tv_season(tmdb_id, season)
+    log(f"episodes: fetching tmdb_id={tmdb_id} season={season}")
+    try:
+        data = tmdb_obj.tv_season(tmdb_id, season)
+    except Exception as e:
+        log(f"episodes: tv_season error: {e}", xbmc.LOGERROR)
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
 
-    xbmcplugin.setContent(HANDLE, "episodes")
-    for ep in data.get("episodes", []):
+    eps = data.get("episodes", [])
+    log(f"episodes: got {len(eps)} episodes")
+
+    xbmcplugin.setContent(HANDLE, "videos")
+    count = 0
+    for ep in eps:
         ep_num = ep.get("episode_number", 0)
         label  = f"S{season:02d}E{ep_num:02d} – {ep.get('name', '')}"
         li     = xbmcgui.ListItem(label)
@@ -398,7 +453,7 @@ def episodes(params: dict):
             "episode": ep_num,
             "plot": ep.get("overview", ""),
             "rating": ep.get("vote_average", 0),
-            "mediatype": "episode",
+            "mediatype": "video",
         })
         li.setProperty("IsPlayable", "false")
         target = url(
@@ -413,7 +468,9 @@ def episodes(params: dict):
             year=params.get("year", ""),
         )
         xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=True)
-    xbmcplugin.endOfDirectory(HANDLE)
+        count += 1
+    log(f"episodes: added {count} episodes")
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=True, updateListing=False, cacheToDisc=False)
 
 
 # ---------------------------------------------------------------------------
@@ -724,7 +781,7 @@ def continue_series(params: dict):
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
 
-    xbmcplugin.setContent(HANDLE, "tvshows")
+    xbmcplugin.setContent(HANDLE, "videos")
     for s in series_list:
         next_ep = watch_history.get_next_episode(s.get("tmdb_id", ""))
         if not next_ep:
