@@ -16,7 +16,9 @@
              id="auto_play_best" default="false"/>
   </category>
   <category label="Stahování">
+    <setting label="Povolit stahování" type="bool" id="download_enabled" default="false"/>
     <setting label="Složka pro stažené soubory" type="folder" id="download_folder"
-             source="auto" default="" option="writeable"/>
+             source="auto" default="" option="writeable"
+             enable="eq(-1,true)"/>
   </category>
 </settings>

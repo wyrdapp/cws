@@ -177,8 +177,9 @@ def main_menu():
         ("Populární seriály",                   url(action="browse_list", type="series", category="popular", page="1")),
         ("Nejlépe hodnocené seriály",           url(action="browse_list", type="series", category="top_rated", page="1")),
         ("Filmy podle žánru",                   url(action="browse")),
-        ("Stažené soubory",                     url(action="downloads")),
     ]
+    if setting("download_enabled") == "true":
+        items.append(("Stažené soubory", url(action="downloads")))
     for label, target in items:
         li = xbmcgui.ListItem(label)
         li.setProperty("IsPlayable", "false")
@@ -609,14 +610,16 @@ def select_stream(params: dict):
         if desc:
             li.setInfo("video", {"title": label, "plot": desc, "mediatype": "video"})
 
-        dl_url = url(
-            action="download",
-            ident=fdata["ident"],
-            filename=encode(fdata.get("name", "file")),
-        )
-        li.addContextMenuItems([
-            ("Stáhnout pro offline", f"RunPlugin({dl_url})"),
-        ])
+        dl_enabled = setting("download_enabled") == "true"
+        if dl_enabled:
+            dl_url = url(
+                action="download",
+                ident=fdata["ident"],
+                filename=encode(fdata.get("name", "file")),
+            )
+            li.addContextMenuItems([
+                ("Stáhnout pro offline", f"RunPlugin({dl_url})"),
+            ])
 
         target = url(
             action="play",
@@ -633,13 +636,13 @@ def select_stream(params: dict):
         )
         xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
 
-        # Download button as separate list item
-        dl_li = xbmcgui.ListItem(f"[I][Stáhnout] {label}[/I]")
-        dl_li.setInfo("video", {"title": f"Stáhnout: {label}", "mediatype": "video"})
-        dl_li.setProperty("IsPlayable", "false")
-        if art:
-            dl_li.setArt(art)
-        xbmcplugin.addDirectoryItem(HANDLE, dl_url, dl_li, isFolder=False)
+        if dl_enabled:
+            dl_li = xbmcgui.ListItem(f"[I][Stáhnout] {label}[/I]")
+            dl_li.setInfo("video", {"title": f"Stáhnout: {label}", "mediatype": "video"})
+            dl_li.setProperty("IsPlayable", "false")
+            if art:
+                dl_li.setArt(art)
+            xbmcplugin.addDirectoryItem(HANDLE, dl_url, dl_li, isFolder=False)
 
     xbmcplugin.endOfDirectory(HANDLE)
 
