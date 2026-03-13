@@ -29,17 +29,24 @@ import xbmcvfs
 
 sys.path.insert(0, xbmcaddon.Addon().getAddonInfo("path") + "/lib")
 
-from history import WatchHistory
-from webshare import WebshareClient
-from tmdb import TMDBClient
-from resolver import (
-    calculate_score,
-    matches_episode,
-    matches_title,
-    parse_description,
-    parse_filename,
-    stream_label,
-)
+try:
+    from history import WatchHistory
+    from webshare import WebshareClient
+    from tmdb import TMDBClient
+    from resolver import (
+        calculate_score,
+        matches_episode,
+        matches_title,
+        parse_description,
+        parse_filename,
+        stream_label,
+    )
+except Exception:
+    import traceback
+    _tb = traceback.format_exc()
+    xbmc.log(f"[plugin.video.cws] IMPORT ERROR: {_tb}", xbmc.LOGERROR)
+    xbmcgui.Dialog().textviewer("Stream Cinema - Import Error", _tb)
+    raise
 
 # ---------------------------------------------------------------------------
 # Bootstrap
@@ -1023,5 +1030,17 @@ def router(params: dict):
 
 
 if __name__ == "__main__":
-    params = dict(parse_qsl(sys.argv[2][1:])) if len(sys.argv) > 2 else {}
-    router(params)
+    try:
+        params = dict(parse_qsl(sys.argv[2][1:])) if len(sys.argv) > 2 else {}
+        router(params)
+    except Exception:
+        import traceback
+        tb = traceback.format_exc()
+        try:
+            xbmc.log(f"[plugin.video.cws] FATAL: {tb}", xbmc.LOGERROR)
+        except Exception:
+            pass
+        try:
+            xbmcgui.Dialog().textviewer("Stream Cinema - Chyba", tb)
+        except Exception:
+            pass
