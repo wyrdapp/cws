@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Filename parsing (regex-based, no external deps), scoring and title matching.
 """

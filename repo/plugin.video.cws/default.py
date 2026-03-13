@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Webshare Kodi addon – hlavní vstupní bod.
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Webshare API synchronous client (no external dependencies beyond requests)."""
 
 import hashlib
