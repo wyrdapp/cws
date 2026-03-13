@@ -4,8 +4,6 @@ from __future__ import annotations
 Filename parsing (regex-based, no external deps), scoring and title matching.
 """
 
-from __future__ import annotations
-
 import re
 from difflib import SequenceMatcher
 
