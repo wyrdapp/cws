@@ -45,7 +45,7 @@ except Exception:
     import traceback
     _tb = traceback.format_exc()
     xbmc.log(f"[plugin.video.cws] IMPORT ERROR: {_tb}", xbmc.LOGERROR)
-    xbmcgui.Dialog().textviewer("Stream Cinema - Import Error", _tb)
+    xbmcgui.Dialog().textviewer("Webkino - Import Error", _tb)
     raise
 
 # ---------------------------------------------------------------------------
@@ -1043,6 +1043,6 @@ if __name__ == "__main__":
         except Exception:
             pass
         try:
-            xbmcgui.Dialog().textviewer("Stream Cinema - Chyba", tb)
+            xbmcgui.Dialog().textviewer("Webkino - Chyba", tb)
         except Exception:
             pass

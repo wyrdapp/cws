@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <addon id="plugin.video.cws"
-       name="Stream Cinema"
-       version="1.4.2"
+       name="Webkino"
+       version="1.4.1"
        provider-name="wyrdapp">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -11,8 +11,8 @@
     <provides>video</provides>
   </extension>
   <extension point="xbmc.addon.metadata">
-    <summary lang="en">Stream Cinema - movies and series</summary>
-    <description lang="en">Browse, search and play movies and series with TMDB integration and smart quality selection.</description>
+    <summary lang="en">Webkino - movies and series</summary>
+    <description lang="en">Browse, search and play movies and series from Webshare with TMDB integration and smart quality selection.</description>
     <assets>
       <icon>icon.png</icon>
     </assets>
