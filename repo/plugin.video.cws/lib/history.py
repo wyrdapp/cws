@@ -4,35 +4,42 @@ from __future__ import annotations
 Watch history & series progress tracker.
 
 Stores data in a JSON file inside Kodi's addon profile directory.
+Uses xbmcvfs for all file operations to support Android and other
+platforms where special:// paths are not accessible via os module.
 """
 
 import json
-import os
 import time
 from typing import Any
+
+import xbmcvfs
 
 MAX_HISTORY = 100
 
 
 class WatchHistory:
     def __init__(self, profile_dir: str):
-        self._dir = profile_dir
-        os.makedirs(self._dir, exist_ok=True)
-        self._path = os.path.join(self._dir, "history.json")
+        # Translate special:// path to a real filesystem path
+        self._dir = xbmcvfs.translatePath(profile_dir)
+        xbmcvfs.mkdirs(self._dir)
+        self._path = self._dir.rstrip("/\\") + "/history.json"
         self._data = self._load()
 
     def _load(self) -> dict:
-        if os.path.exists(self._path):
+        if xbmcvfs.exists(self._path):
             try:
-                with open(self._path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
+                f = xbmcvfs.File(self._path)
+                content = f.read()
+                f.close()
+                return json.loads(content)
+            except (ValueError, IOError):
                 pass
         return {"items": [], "series": {}}
 
     def _save(self):
-        with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, ensure_ascii=False, indent=1)
+        f = xbmcvfs.File(self._path, "w")
+        f.write(json.dumps(self._data, ensure_ascii=False, indent=1))
+        f.close()
 
     # -- watch history ------------------------------------------------------
 
@@ -48,7 +55,6 @@ class WatchHistory:
         entry = dict(item)
         entry["timestamp"] = time.time()
 
-        # remove previous entry for the same content
         items = self._data.setdefault("items", [])
         if entry.get("type") == "series" and entry.get("season") and entry.get("episode"):
             key = f"{entry.get('tmdb_id')}_{entry.get('season')}_{entry.get('episode')}"
@@ -59,7 +65,6 @@ class WatchHistory:
         items.insert(0, entry)
         self._data["items"] = items[:MAX_HISTORY]
 
-        # update series progress
         if entry.get("type") == "series" and entry.get("season") and entry.get("episode"):
             self._update_series(entry)
 

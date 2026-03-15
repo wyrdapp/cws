@@ -949,20 +949,22 @@ def browse_downloads(params: dict):
         return
 
     real_path = xbmcvfs.translatePath(dl_folder)
-    if not os.path.isdir(real_path):
+    if not xbmcvfs.exists(real_path):
         xbmcgui.Dialog().ok("Stažené soubory", "Složka neexistuje.")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
 
     video_exts = {".mkv", ".avi", ".mp4", ".m4v", ".mov", ".wmv", ".ts", ".flv", ".webm"}
     files = []
-    for fname in os.listdir(real_path):
+    _dirs, fnames = xbmcvfs.listdir(real_path)
+    for fname in fnames:
         ext = os.path.splitext(fname)[1].lower()
         if ext in video_exts:
-            fpath = os.path.join(real_path, fname)
-            size_mb = os.path.getsize(fpath) / (1024 * 1024)
+            fpath = real_path.rstrip("/\\") + "/" + fname
+            stat = xbmcvfs.Stat(fpath)
+            size_mb = stat.st_size() / (1024 * 1024)
             files.append((fname, fpath, size_mb))
-    files.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
+    files.sort(key=lambda x: x[0])
 
     if not files:
         xbmcgui.Dialog().ok("Stažené soubory", "Žádné stažené soubory.")
