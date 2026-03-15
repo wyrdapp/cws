@@ -15,6 +15,10 @@
     <setting label="Automaticky přehrát nejlepší stream" type="bool"
              id="auto_play_best" default="false"/>
   </category>
+  <category label="Zdroje">
+    <setting label="Webshare (vyžaduje VIP účet)" type="bool" id="webshare_enabled" default="true"/>
+    <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
+  </category>
   <category label="Stahování">
     <setting label="Povolit stahování" type="bool" id="download_enabled" default="false"/>
     <setting label="Složka pro stažené soubory" type="folder" id="download_folder"

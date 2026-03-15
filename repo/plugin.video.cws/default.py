@@ -628,11 +628,11 @@ def _find_hellspy_streams(params: dict) -> list[dict]:
 
 
 def select_stream(params: dict):
-    scored = _find_streams(params)
-    hs_results = _find_hellspy_streams(params)
+    scored = _find_streams(params) if setting("webshare_enabled") != "false" else []
+    hs_results = _find_hellspy_streams(params) if setting("hellspy_enabled") != "false" else []
 
     if not scored and not hs_results:
-        xbmcgui.Dialog().ok("Webkino", "Žádné streamy nenalezeny.")
+        xbmcgui.Dialog().ok("Webkino", "Žádné streamy nenalezeny.\n\nZkus zapnout více zdrojů v nastavení.")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
 
