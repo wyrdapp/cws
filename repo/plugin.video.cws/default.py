@@ -33,6 +33,7 @@ try:
     from history import WatchHistory
     from webshare import WebshareClient
     from tmdb import TMDBClient
+    from hellspy import HellspyClient
     from resolver import (
         calculate_score,
         matches_episode,
@@ -87,6 +88,7 @@ _tmdb: TMDBClient | None = None
 
 
 watch_history = WatchHistory(xbmcaddon.Addon().getAddonInfo("profile"))
+_hellspy = HellspyClient()
 
 
 def _do_settings():
@@ -587,10 +589,50 @@ def _find_streams(params: dict) -> list[tuple[int, dict, dict]]:
     return scored
 
 
+def _find_hellspy_streams(params: dict) -> list[dict]:
+    """Search Hellspy and return list of result dicts with stream info."""
+    content_type   = params.get("type", "movie")
+    title          = decode(params.get("title", ""))
+    original_title = decode(params.get("original_title", title))
+    year           = decode(params.get("year", ""))
+    season         = int(params.get("season", 0)) or None
+    episode        = int(params.get("episode", 0)) or None
+
+    if content_type == "movie":
+        query = f"{original_title} {year}".strip()
+    else:
+        ep_tag = f" S{season:02d}E{episode:02d}" if season and episode else ""
+        query = f"{original_title}{ep_tag}"
+
+    log(f"Hellspy search: '{query}'")
+    results = _hellspy.search(query, limit=20)
+
+    if not results and title != original_title:
+        fallback = f"{title} S{season:02d}E{episode:02d}" if (content_type == "series" and season and episode) else title
+        results = _hellspy.search(fallback, limit=20)
+
+    # Filter by title and episode match using same logic as Webshare
+    matched = []
+    for item in results:
+        parsed = parse_filename(item.get("title", ""))
+        if not matches_title(parsed, title, original_title, year):
+            continue
+        if content_type == "series" and season and episode:
+            if not matches_episode(parsed, season, episode):
+                continue
+        matched.append(item)
+
+    # Sort by size descending (larger = better quality)
+    matched.sort(key=lambda x: x.get("size", 0), reverse=True)
+    return matched[:8]
+
+
 def select_stream(params: dict):
     scored = _find_streams(params)
-    if not scored:
-        xbmcgui.Dialog().ok("Webshare", "Žádné streamy nenalezeny.")
+    hs_results = _find_hellspy_streams(params)
+
+    if not scored and not hs_results:
+        xbmcgui.Dialog().ok("Webkino", "Žádné streamy nenalezeny.")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
 
@@ -652,6 +694,44 @@ def select_stream(params: dict):
             if art:
                 dl_li.setArt(art)
             xbmcplugin.addDirectoryItem(HANDLE, dl_url, dl_li, isFolder=False)
+
+    # --- Hellspy výsledky ---
+    for hs_item in hs_results:
+        file_id   = hs_item.get("id")
+        file_hash = hs_item.get("fileHash", "")
+        hs_title  = hs_item.get("title", "")
+        size_gb   = hs_item.get("size", 0) / 1024 / 1024 / 1024
+        size_str  = f"{size_gb:.2f} GB" if size_gb > 0 else ""
+
+        # Zjisti dostupné kvality
+        streams = _hellspy.stream_urls(file_id, file_hash)
+        if not streams:
+            continue
+
+        for s in streams:
+            quality = s["quality"]
+            label = f"[HS] {hs_title} | {quality}"
+            if size_str:
+                label += f" | {size_str}"
+
+            li = xbmcgui.ListItem(label)
+            li.setInfo("video", {"title": label, "mediatype": "video"})
+            li.setProperty("IsPlayable", "true")
+
+            target = url(
+                action="play_hellspy",
+                stream_url=encode(s["url"]),
+                label=encode(label),
+                type=params.get("type", "movie"),
+                title=params.get("title", ""),
+                original_title=params.get("original_title", ""),
+                year=params.get("year", ""),
+                tmdb_id=params.get("tmdb_id", ""),
+                imdb_id=params.get("imdb_id", ""),
+                season=params.get("season", ""),
+                episode=params.get("episode", ""),
+            )
+            xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
 
     xbmcplugin.endOfDirectory(HANDLE)
 
@@ -750,6 +830,19 @@ def play_ident(params: dict):
         if params.get("episode"):
             meta["episode"] = int(params["episode"])
     _play_ident(params.get("ident", ""), meta=meta)
+
+
+def play_hellspy(params: dict):
+    """Play a Hellspy stream directly by URL."""
+    stream_url = decode(params.get("stream_url", ""))
+    label      = decode(params.get("label", "Hellspy"))
+    if not stream_url:
+        xbmcgui.Dialog().ok("Hellspy", "Nelze získat odkaz ke streamu.")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+    li = xbmcgui.ListItem(label, path=stream_url)
+    li.setInfo("video", {"title": label, "mediatype": "video"})
+    xbmcplugin.setResolvedUrl(HANDLE, True, li)
 
 
 # ---------------------------------------------------------------------------
@@ -1014,6 +1107,7 @@ def router(params: dict):
         "episodes":       lambda: episodes(params),
         "select_stream":  lambda: select_stream(params),
         "play":           lambda: play_ident(params),
+        "play_hellspy":   lambda: play_hellspy(params),
         "subtitle":       lambda: resolve_subtitle(params),
         "history":        lambda: show_history(params),
         "continue_series": lambda: continue_series(params),
