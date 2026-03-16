@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <settings>
-  <category label="Webshare účet">
-    <setting label="Uživatelské jméno" type="text" id="webshare_username" default=""/>
-    <setting label="Heslo" type="text" id="webshare_password" option="hidden" default=""/>
-    <setting label="TMDB API klíč" type="text" id="tmdb_api_key" default=""/>
+  <category label="Zdroje">
+    <setting label="Webshare (vyžaduje VIP účet)" type="bool" id="webshare_enabled" default="true"/>
+    <setting label="  Uživatelské jméno" type="text" id="webshare_username" default=""
+             enable="eq(-2,true)"/>
+    <setting label="  Heslo" type="text" id="webshare_password" option="hidden" default=""
+             enable="eq(-2,true)"/>
+    <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
   </category>
   <category label="Předvolby">
+    <setting label="TMDB API klíč" type="text" id="tmdb_api_key" default=""/>
     <setting label="Preferovaný jazyk" type="select" id="preferred_language"
              values="CS|SK|EN|Vše" default="0"/>
     <setting label="Minimální kvalita" type="select" id="min_quality"
@@ -14,10 +18,6 @@
              values="10|15|25" default="1"/>
     <setting label="Automaticky přehrát nejlepší stream" type="bool"
              id="auto_play_best" default="false"/>
-  </category>
-  <category label="Zdroje">
-    <setting label="Webshare (vyžaduje VIP účet)" type="bool" id="webshare_enabled" default="true"/>
-    <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
   </category>
   <category label="Stahování">
     <setting label="Povolit stahování" type="bool" id="download_enabled" default="false"/>
