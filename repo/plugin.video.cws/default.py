@@ -90,10 +90,52 @@ _tmdb: TMDBClient | None = None
 watch_history = WatchHistory(xbmcaddon.Addon().getAddonInfo("profile"))
 _hellspy = HellspyClient()
 
+# Persistent settings IDs that survive reinstall (all except credentials)
+_PERSISTENT_SETTINGS = [
+    "preferred_language", "min_quality", "max_results",
+    "auto_play_best", "webshare_enabled", "hellspy_enabled",
+    "download_enabled", "download_folder",
+]
+
+
+def _restore_prefs():
+    """Restore preferences from persistent JSON if Kodi reset them."""
+    saved = watch_history.load_prefs()
+    if not saved:
+        return
+    addon = xbmcaddon.Addon()
+    for key in _PERSISTENT_SETTINGS:
+        if key not in saved:
+            continue
+        # Only restore if current value equals the schema default (i.e. was reset)
+        current = addon.getSetting(key)
+        if current == saved.get(key):
+            continue
+        # Heuristic: if key is "preferred_language" and current is "0" but saved isn't,
+        # restore. For booleans and folder also restore if empty/default.
+        defaults = {
+            "preferred_language": "0", "min_quality": "0", "max_results": "1",
+            "auto_play_best": "false", "webshare_enabled": "true",
+            "hellspy_enabled": "true", "download_enabled": "false",
+            "download_folder": "",
+        }
+        if current == defaults.get(key, ""):
+            addon.setSetting(key, saved[key])
+            log(f"Restored setting {key}={saved[key]}")
+
+
+def _save_prefs():
+    """Persist current non-default settings to JSON."""
+    addon = xbmcaddon.Addon()
+    prefs = {key: addon.getSetting(key) for key in _PERSISTENT_SETTINGS}
+    watch_history.save_prefs(prefs)
+
 
 def _do_settings():
     """Open addon settings dialog (non-directory action)."""
     xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
+    xbmc.sleep(1000)  # počkej na zavření dialogu
+    _save_prefs()
     xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
 
 
@@ -1097,6 +1139,8 @@ def delete_download(params: dict):
 def router(params: dict):
     action = params.get("action", "main")
     log(f"action={action} params={params}")
+    if action == "main":
+        _restore_prefs()
     dispatch = {
         "main":           lambda: main_menu(),
         "search_movies":  lambda: search_movies(params),

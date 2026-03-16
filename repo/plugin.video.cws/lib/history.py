@@ -119,3 +119,15 @@ class WatchHistory:
         s = info.get("last_season", 1)
         e = info.get("last_episode", 0)
         return (s, e + 1)
+
+    # -- persistent preferences --------------------------------------------
+    # Settings stored here survive addon reinstalls (unlike Kodi's own settings)
+
+    def save_prefs(self, prefs: dict):
+        """Save user preferences to persistent storage."""
+        self._data["prefs"] = prefs
+        self._save()
+
+    def load_prefs(self) -> dict:
+        """Load previously saved preferences. Returns empty dict if none."""
+        return dict(self._data.get("prefs", {}))
