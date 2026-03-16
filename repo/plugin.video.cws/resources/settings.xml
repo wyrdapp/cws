@@ -9,7 +9,6 @@
     <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
   </category>
   <category label="Předvolby">
-    <setting label="TMDB API klíč" type="text" id="tmdb_api_key" default=""/>
     <setting label="Preferovaný jazyk" type="select" id="preferred_language"
              values="CS|SK|EN|Vše" default="0"/>
     <setting label="Minimální kvalita" type="select" id="min_quality"
@@ -18,6 +17,7 @@
              values="10|15|25" default="1"/>
     <setting label="Automaticky přehrát nejlepší stream" type="bool"
              id="auto_play_best" default="false"/>
+    <setting label="TMDB API klíč" type="text" id="tmdb_api_key" default=""/>
   </category>
   <category label="Stahování">
     <setting label="Povolit stahování" type="bool" id="download_enabled" default="false"/>
