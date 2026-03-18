@@ -844,6 +844,56 @@ def resolve_subtitle(params: dict):
         xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
 
 
+def _fmt_time(seconds: int) -> str:
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
+def _monitor_playback(entry: dict):
+    """Run after setResolvedUrl — tracks playback position and saves to history."""
+    player  = xbmc.Player()
+    monitor = xbmc.Monitor()
+
+    # Wait for playback to actually start (up to 15 s)
+    for _ in range(30):
+        if player.isPlaying():
+            break
+        monitor.waitForAbort(0.5)
+    if not player.isPlaying():
+        return
+
+    # Save initial entry immediately (so history shows it even for short views)
+    watch_history.add(entry)
+
+    last_saved = 0.0
+    while not monitor.abortRequested():
+        try:
+            if not player.isPlaying():
+                break
+            current = player.getTime()
+            total   = player.getTotalTime()
+            entry["resume_time"] = int(current)
+            entry["total_time"]  = int(total) if total > 0 else 0
+            if current - last_saved >= 30:
+                watch_history.add(entry)
+                last_saved = current
+        except Exception:
+            break
+        monitor.waitForAbort(5)
+
+    # Save final position
+    try:
+        if not player.isPlaying():
+            entry["resume_time"] = int(player.getTime())
+    except Exception:
+        pass
+    watch_history.add(entry)
+
+
 def _play_ident(ident: str, meta: dict | None = None):
     ws = get_ws()
     if not ws:
@@ -858,19 +908,34 @@ def _play_ident(ident: str, meta: dict | None = None):
     li = xbmcgui.ListItem(path=link)
     li.setProperty("IsPlayable", "true")
 
-    # Subtitles: pass plugin URLs (fresh link generated at load time, not now)
+    # Subtitles
     sub_idents = _find_tied_subtitle_idents(ws, ident)
     if sub_idents:
         sub_urls = [url(action="subtitle", ident=si) for si in sub_idents]
         li.setSubtitles(sub_urls)
         log(f"Attached {len(sub_urls)} Webshare subtitle(s)")
 
-    if meta:
-        entry = dict(meta)
-        entry["ident"] = ident
-        watch_history.add(entry)
+    # Resume
+    entry: dict = dict(meta) if meta else {}
+    entry["ident"] = ident
+
+    if meta and meta.get("tmdb_id"):
+        resume = watch_history.get_resume(
+            meta["tmdb_id"],
+            meta.get("season"),
+            meta.get("episode"),
+        )
+        if resume > 60:
+            if xbmcgui.Dialog().yesno(
+                "Pokračovat",
+                f"Přehrát od [B]{_fmt_time(resume)}[/B]?",
+                nolabel="Od začátku",
+                yeslabel="Pokračovat",
+            ):
+                li.setProperty("StartOffset", str(resume))
 
     xbmcplugin.setResolvedUrl(HANDLE, True, li)
+    _monitor_playback(entry)
 
 
 def play_ident(params: dict):
@@ -902,9 +967,46 @@ def play_hellspy(params: dict):
         xbmcgui.Dialog().ok("Hellspy", "Nelze získat odkaz ke streamu.")
         xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
         return
+
+    entry = {
+        "type":           params.get("type", "movie"),
+        "title":          decode(params.get("title", label)),
+        "original_title": decode(params.get("original_title", "")),
+        "year":           decode(params.get("year", "")),
+        "tmdb_id":        params.get("tmdb_id", ""),
+        "imdb_id":        decode(params.get("imdb_id", "")),
+        "stream_label":   label,
+        "source":         "hellspy",
+    }
+    if params.get("season"):
+        entry["season"] = int(params["season"])
+    if params.get("episode"):
+        entry["episode"] = int(params["episode"])
+
+    # Resume
+    if entry.get("tmdb_id"):
+        resume = watch_history.get_resume(
+            entry["tmdb_id"],
+            entry.get("season"),
+            entry.get("episode"),
+        )
+    else:
+        resume = 0
+
     li = xbmcgui.ListItem(label, path=stream_url)
     li.setInfo("video", {"title": label, "mediatype": "video"})
+
+    if resume > 60:
+        if xbmcgui.Dialog().yesno(
+            "Pokračovat",
+            f"Přehrát od [B]{_fmt_time(resume)}[/B]?",
+            nolabel="Od začátku",
+            yeslabel="Pokračovat",
+        ):
+            li.setProperty("StartOffset", str(resume))
+
     xbmcplugin.setResolvedUrl(HANDLE, True, li)
+    _monitor_playback(entry)
 
 
 # ---------------------------------------------------------------------------
@@ -927,19 +1029,41 @@ def show_history(params: dict):
         if entry.get("type") == "series" and entry.get("season") and entry.get("episode"):
             label += f" - S{entry['season']:02d}E{entry['episode']:02d}"
 
-        sl = entry.get("stream_label", "")
-        if sl:
-            label += f"  [{sl}]"
+        # Show playback progress
+        resume = entry.get("resume_time", 0)
+        total  = entry.get("total_time", 0)
+        if resume and total and total > 0:
+            pct = int(resume * 100 / total)
+            label += f"  ({pct}% | {_fmt_time(resume)})"
+        elif resume:
+            label += f"  ({_fmt_time(resume)})"
 
         li = xbmcgui.ListItem(label)
         li.setArt({"poster": entry.get("poster", ""), "fanart": entry.get("fanart", ""),
                     "thumb": entry.get("poster", "")})
-        li.setInfo("video", {"title": label, "mediatype": "video"})
+        info = {"title": label, "mediatype": "video"}
+        if total:
+            info["duration"] = total
+        li.setInfo("video", info)
         li.setProperty("IsPlayable", "true")
+        if resume and total:
+            li.setProperty("ResumeTime", str(resume))
+            li.setProperty("TotalTime", str(total))
 
         ident = entry.get("ident", "")
         if ident:
-            target = url(action="play", ident=ident)
+            target = url(
+                action="play",
+                ident=ident,
+                type=entry.get("type", "movie"),
+                title=encode(title),
+                original_title=encode(entry.get("original_title", title)),
+                year=encode(year),
+                tmdb_id=str(entry.get("tmdb_id", "")),
+                imdb_id=encode(entry.get("imdb_id", "")),
+                season=str(entry.get("season", "")),
+                episode=str(entry.get("episode", "")),
+            )
         else:
             target = url(
                 action="select_stream",

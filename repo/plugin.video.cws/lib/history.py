@@ -110,6 +110,22 @@ class WatchHistory:
         items.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
         return items
 
+    def get_resume(self, tmdb_id: str, season: int | None = None, episode: int | None = None) -> int:
+        """Return saved resume position in seconds, or 0 if not available."""
+        for item in self._data.get("items", []):
+            if str(item.get("tmdb_id", "")) != str(tmdb_id):
+                continue
+            if season and episode:
+                if item.get("season") != season or item.get("episode") != episode:
+                    continue
+            t = item.get("resume_time", 0)
+            total = item.get("total_time", 0)
+            # Don't offer resume if already at the end (>90%)
+            if total and t / total > 0.90:
+                return 0
+            return t or 0
+        return 0
+
     def get_next_episode(self, tmdb_id: str) -> tuple[int, int] | None:
         """Return (season, episode) for the next unwatched episode, or None."""
         series = self._data.get("series", {})
