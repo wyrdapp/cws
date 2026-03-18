@@ -870,8 +870,7 @@ def select_stream(params: dict):
         li.setInfo("video", {"title": label, "mediatype": "video"})
         li.setProperty("IsPlayable", "true")
 
-        target = url(
-            action="play_rd",
+        common_rd_params = dict(
             torrent_hash=rd_item["hash"],
             file_idx=str(rd_item.get("file_idx", 0)),
             label=encode(label),
@@ -884,6 +883,14 @@ def select_stream(params: dict):
             season=params.get("season", ""),
             episode=params.get("episode", ""),
         )
+        target = url(action="play_rd", **common_rd_params)
+
+        if setting("download_enabled") == "true":
+            dl_url = url(action="download_rd", **common_rd_params)
+            li.addContextMenuItems([
+                ("Stáhnout pro offline", f"RunPlugin({dl_url})"),
+            ])
+
         xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
 
     xbmcplugin.endOfDirectory(HANDLE)
@@ -1373,6 +1380,97 @@ def download_file(params: dict):
     log(f"download_file: done, {downloaded} bytes")
 
 
+def download_rd(params: dict):
+    """Resolve a Real-Debrid torrent to a direct URL and download it."""
+    import requests as _requests
+
+    dl_folder = setting("download_folder")
+    if not dl_folder:
+        xbmcgui.Dialog().ok(
+            "Stahování",
+            "Nastav složku pro stahování v nastavení addonu.",
+        )
+        xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
+        return
+
+    rd = get_rd()
+    if not rd:
+        xbmcgui.Dialog().ok("Real-Debrid", "Nastav API klíč v nastavení.")
+        return
+
+    torrent_hash = params.get("torrent_hash", "")
+    file_idx     = int(params.get("file_idx", 0))
+    label        = decode(params.get("label", "RD soubor"))
+
+    if not torrent_hash:
+        log("download_rd: missing torrent_hash", xbmc.LOGERROR)
+        return
+
+    progress = xbmcgui.DialogProgress()
+    progress.create("Real-Debrid", "Získávám odkaz ke stažení...")
+    try:
+        stream_url = rd.get_stream_url(torrent_hash, file_idx)
+    except Exception as e:
+        progress.close()
+        log(f"download_rd: resolve error: {e}", xbmc.LOGERROR)
+        xbmcgui.Dialog().ok("Real-Debrid", f"Nelze získat odkaz:\n{e}")
+        return
+
+    # Derive filename from URL or label
+    from urllib.parse import urlparse
+    url_path = urlparse(stream_url).path
+    filename = os.path.basename(url_path) or (label.replace(" ", "_") + ".mkv")
+    dest = os.path.join(dl_folder, filename)
+
+    if xbmcvfs.exists(dest):
+        if not xbmcgui.Dialog().yesno(
+            "Stahování", f"Soubor už existuje:\n{filename}\n\nPřepsat?"
+        ):
+            progress.close()
+            return
+
+    log(f"download_rd: {filename} → {dest}")
+    progress.update(0, f"Stahuji: {filename}")
+
+    try:
+        resp = _requests.get(stream_url, stream=True, timeout=30)
+        resp.raise_for_status()
+        total      = int(resp.headers.get("content-length", 0))
+        downloaded = 0
+        chunk_size = 64 * 1024
+
+        with open(xbmcvfs.translatePath(dest), "wb") as f:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if progress.iscanceled():
+                    log("download_rd: cancelled by user")
+                    f.close()
+                    xbmcvfs.delete(dest)
+                    progress.close()
+                    xbmcgui.Dialog().notification(
+                        "Stahování", "Stahování zrušeno", xbmcgui.NOTIFICATION_WARNING
+                    )
+                    return
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct    = int(downloaded * 100 / total)
+                    mb_done  = downloaded / (1024 * 1024)
+                    mb_total = total / (1024 * 1024)
+                    progress.update(pct, f"Stahuji: {filename}",
+                                    f"{mb_done:.1f} / {mb_total:.1f} MB")
+    except Exception as e:
+        log(f"download_rd: error: {e}", xbmc.LOGERROR)
+        progress.close()
+        xbmcgui.Dialog().ok("Stahování", f"Chyba při stahování:\n{e}")
+        return
+
+    progress.close()
+    xbmcgui.Dialog().notification(
+        "Stahování", f"Staženo: {filename}", xbmcgui.NOTIFICATION_INFO
+    )
+    log(f"download_rd: done, {downloaded} bytes")
+
+
 def browse_downloads(params: dict):
     """List downloaded files for offline playback."""
     dl_folder = setting("download_folder")
@@ -1462,6 +1560,7 @@ def router(params: dict):
         "continue_series": lambda: continue_series(params),
         "clear_history":  lambda: clear_history(params),
         "download":       lambda: download_file(params),
+        "download_rd":    lambda: download_rd(params),
         "downloads":      lambda: browse_downloads(params),
         "delete_download": lambda: delete_download(params),
         "settings":       lambda: _do_settings(),
