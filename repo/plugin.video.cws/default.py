@@ -666,8 +666,9 @@ def _find_streams(params: dict) -> list[tuple[int, dict, dict]]:
 
 def _find_rd_streams(params: dict) -> list[dict]:
     """
-    Search Torrentio for torrents, check Real-Debrid cache,
-    return list of instantly available streams.
+    Search Torrentio for torrents and return them as Real-Debrid candidates.
+    Cache check happens on-demand when user selects a stream (play_rd),
+    because the RD instantAvailability endpoint is disabled (error 37).
     """
     rd = get_rd()
     if not rd:
@@ -678,7 +679,7 @@ def _find_rd_streams(params: dict) -> list[dict]:
     season       = int(params.get("season", 0)) or None
     episode      = int(params.get("episode", 0)) or None
 
-    # Fetch IMDB ID from TMDB if missing (search results don't include it)
+    # Fetch IMDB ID from TMDB if missing
     if not imdb_id and params.get("tmdb_id"):
         tmdb_c = get_tmdb()
         if tmdb_c:
@@ -702,21 +703,10 @@ def _find_rd_streams(params: dict) -> list[dict]:
         log("RD: Torrentio returned no results")
         return []
 
-    # Check which hashes are in RD cache
-    hashes = [t["hash"] for t in torrents]
-    availability = rd.instant_availability(hashes)
-
-    cached = []
-    for t in torrents:
-        h = t["hash"]
-        avail = availability.get(h, {})
-        rd_variants = avail.get("rd", [])
-        if rd_variants:
-            t["rd_cached"] = True
-            cached.append(t)
-
-    log(f"RD: {len(cached)}/{len(torrents)} torrents cached in RD")
-    return cached
+    # Return top 10 results — cached check deferred to play_rd
+    result = torrents[:10]
+    log(f"RD: returning {len(result)} Torrentio streams for RD resolution")
+    return result
 
 
 def _find_hellspy_streams(params: dict) -> list[dict]:

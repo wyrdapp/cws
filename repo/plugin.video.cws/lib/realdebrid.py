@@ -28,26 +28,38 @@ class RealDebridClient:
         r.raise_for_status()
         return r.json()
 
-    def instant_availability(self, hashes: list[str]) -> dict:
+    def is_cached(self, torrent_hash: str) -> bool:
         """
-        Check which hashes are instantly available in RD cache.
-        Returns dict: {hash_lower: {"rd": [...]}}
+        Quick cache check: add magnet, select files, check status.
+        Returns True if torrent is instantly available (status=downloaded quickly).
+        Cleans up the torrent afterwards regardless.
         """
-        if not hashes:
-            return {}
-        # RD accepts max ~50 hashes per request
-        chunk = hashes[:50]
-        path = "/".join(h.lower() for h in chunk)
+        torrent_id = None
         try:
-            r = self._session.get(
-                f"{_BASE}/torrents/instantAvailability/{path}",
-                timeout=_TIMEOUT,
-            )
-            r.raise_for_status()
-            return r.json()
+            magnet = f"magnet:?xt=urn:btih:{torrent_hash}"
+            torrent_id = self.add_magnet(magnet)
+            self.select_files(torrent_id, "all")
+            for _ in range(4):  # max 4 seconds
+                info = self.get_torrent_info(torrent_id)
+                status = info.get("status", "")
+                if status == "downloaded":
+                    return True
+                if status in ("error", "dead", "magnet_error", "virus",
+                              "compressing", "uploading"):
+                    return False
+                time.sleep(1)
+            return False
         except Exception as e:
-            log.warning("RD instant_availability error: %s", e)
-            return {}
+            log.warning("RD is_cached error for %s: %s", torrent_hash, e)
+            return False
+        finally:
+            if torrent_id:
+                try:
+                    self._session.delete(
+                        f"{_BASE}/torrents/delete/{torrent_id}", timeout=5
+                    )
+                except Exception:
+                    pass
 
     def add_magnet(self, magnet: str) -> str:
         """Add a magnet link, returns RD torrent ID."""
