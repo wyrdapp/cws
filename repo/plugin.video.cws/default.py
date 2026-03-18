@@ -279,25 +279,35 @@ def _suggest_query(prompt: str) -> str:
 
 
 def search_movies(params: dict):
+    """Show input dialog and redirect to results_movies (preserves back navigation)."""
     query = decode(params.get("query", ""))
     if not query:
         query = _suggest_query("Hledat filmy")
     log(f"search_movies: query={query!r}")
     if not query:
-        log("search_movies: empty query, aborting")
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
+    results_url = url(action="results_movies", query=encode(query), page="1")
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+    xbmc.executebuiltin(f"Container.Update({results_url},replace)")
+
+
+def results_movies(params: dict):
+    """Render movie search results (separate URL so back navigation works)."""
+    query = decode(params.get("query", ""))
+    if not query:
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     tmdb_c = get_tmdb()
     if not tmdb_c:
-        log("search_movies: no TMDB client")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     page = int(params.get("page", 1))
     try:
         data = tmdb_c.search_movies(query, page=page)
-        log(f"search_movies: TMDB returned {len(data.get('results', []))} results")
+        log(f"results_movies: TMDB returned {len(data.get('results', []))} results")
     except Exception as e:
-        log(f"search_movies: TMDB error: {e}", xbmc.LOGERROR)
+        log(f"results_movies: TMDB error: {e}", xbmc.LOGERROR)
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     params["query"] = encode(query)
@@ -305,25 +315,35 @@ def search_movies(params: dict):
 
 
 def search_series(params: dict):
+    """Show input dialog and redirect to results_series (preserves back navigation)."""
     query = decode(params.get("query", ""))
     if not query:
         query = _suggest_query("Hledat seriály")
     log(f"search_series: query={query!r}")
     if not query:
-        log("search_series: empty query, aborting")
+        xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        return
+    results_url = url(action="results_series", query=encode(query), page="1")
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+    xbmc.executebuiltin(f"Container.Update({results_url},replace)")
+
+
+def results_series(params: dict):
+    """Render series search results (separate URL so back navigation works)."""
+    query = decode(params.get("query", ""))
+    if not query:
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     tmdb_c = get_tmdb()
     if not tmdb_c:
-        log("search_series: no TMDB client")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     page = int(params.get("page", 1))
     try:
         data = tmdb_c.search_tv(query, page=page)
-        log(f"search_series: TMDB returned {len(data.get('results', []))} results")
+        log(f"results_series: TMDB returned {len(data.get('results', []))} results")
     except Exception as e:
-        log(f"search_series: TMDB error: {e}", xbmc.LOGERROR)
+        log(f"results_series: TMDB error: {e}", xbmc.LOGERROR)
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     params["query"] = encode(query)
@@ -1145,6 +1165,8 @@ def router(params: dict):
         "main":           lambda: main_menu(),
         "search_movies":  lambda: search_movies(params),
         "search_series":  lambda: search_series(params),
+        "results_movies": lambda: results_movies(params),
+        "results_series": lambda: results_series(params),
         "browse":         lambda: browse(params),
         "browse_list":    lambda: browse_list(params),
         "seasons":        lambda: seasons(params),
