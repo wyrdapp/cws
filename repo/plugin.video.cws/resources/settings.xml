@@ -22,6 +22,17 @@
              id="auto_play_best" default="false"/>
     <setting label="TMDB API klíč" type="text" id="tmdb_api_key" default=""/>
   </category>
+  <category label="Titulky">
+    <setting label="OpenSubtitles (automatické titulky)" type="bool" id="opensubtitles_enabled" default="false"/>
+    <setting label="  API klíč (opensubtitles.com/consumers)" type="text" id="opensubtitles_api_key" default=""
+             enable="eq(-1,true)"/>
+    <setting label="  Uživatelské jméno (volitelné)" type="text" id="opensubtitles_username" default=""
+             enable="eq(-2,true)"/>
+    <setting label="  Heslo (volitelné)" type="text" id="opensubtitles_password" option="hidden" default=""
+             enable="eq(-3,true)"/>
+    <setting label="  Jazyky titulků (cs,sk,en)" type="text" id="subtitle_languages" default="cs,sk,en"
+             enable="eq(-4,true)"/>
+  </category>
   <category label="Stahování">
     <setting label="Povolit stahování" type="bool" id="download_enabled" default="false"/>
     <setting label="Složka pro stažené soubory" type="folder" id="download_folder"

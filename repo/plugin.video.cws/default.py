@@ -36,6 +36,7 @@ try:
     from hellspy import HellspyClient
     from realdebrid import RealDebridClient
     from torrentio import get_streams as torrentio_get_streams
+    from opensubtitles import OpenSubtitlesClient
     from resolver import (
         calculate_score,
         matches_episode,
@@ -88,6 +89,7 @@ def decode(s: str) -> str:
 _ws: WebshareClient | None = None
 _tmdb: TMDBClient | None = None
 _rd: RealDebridClient | None = None
+_os_client: OpenSubtitlesClient | None = None
 
 
 watch_history = WatchHistory(xbmcaddon.Addon().getAddonInfo("profile"))
@@ -184,6 +186,41 @@ def get_rd() -> RealDebridClient | None:
     if _rd is None:
         _rd = RealDebridClient(key)
     return _rd
+
+
+def get_os() -> OpenSubtitlesClient | None:
+    global _os_client
+    if setting("opensubtitles_enabled") != "true":
+        return None
+    key = setting("opensubtitles_api_key")
+    if not key:
+        return None
+    if _os_client is None:
+        _os_client = OpenSubtitlesClient(
+            api_key=key,
+            username=setting("opensubtitles_username"),
+            password=setting("opensubtitles_password"),
+        )
+        _os_client.login()
+    return _os_client
+
+
+def _fetch_opensubtitles(imdb_id: str, media_type: str = "movie",
+                          season: int | None = None,
+                          episode: int | None = None) -> list[str]:
+    """Download subtitles from OpenSubtitles, return list of local paths."""
+    os_c = get_os()
+    if not os_c or not imdb_id:
+        return []
+    langs = setting("subtitle_languages") or "cs,sk,en"
+    try:
+        paths = os_c.fetch_subtitles(imdb_id, langs, media_type, season, episode)
+        if paths:
+            log(f"OpenSubtitles: got {len(paths)} subtitle(s) for {imdb_id}")
+        return paths
+    except Exception as e:
+        log(f"OpenSubtitles error: {e}", xbmc.LOGWARNING)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -1006,12 +1043,20 @@ def _play_ident(ident: str, meta: dict | None = None):
     li = xbmcgui.ListItem(path=link)
     li.setProperty("IsPlayable", "true")
 
-    # Subtitles
-    sub_idents = _find_tied_subtitle_idents(ws, ident)
-    if sub_idents:
-        sub_urls = [url(action="subtitle", ident=si) for si in sub_idents]
+    # Subtitles — Webshare tied files first, then OpenSubtitles
+    sub_urls: list[str] = []
+    ws_sub_idents = _find_tied_subtitle_idents(ws, ident)
+    if ws_sub_idents:
+        sub_urls += [url(action="subtitle", ident=si) for si in ws_sub_idents]
+        log(f"Attached {len(ws_sub_idents)} Webshare subtitle(s)")
+    if meta:
+        os_paths = _fetch_opensubtitles(
+            meta.get("imdb_id", ""), meta.get("type", "movie"),
+            meta.get("season"), meta.get("episode"),
+        )
+        sub_urls += os_paths
+    if sub_urls:
         li.setSubtitles(sub_urls)
-        log(f"Attached {len(sub_urls)} Webshare subtitle(s)")
 
     # Resume
     entry: dict = dict(meta) if meta else {}
@@ -1160,6 +1205,13 @@ def play_rd(params: dict):
 
     li = xbmcgui.ListItem(label, path=stream_url)
     li.setInfo("video", {"title": label, "mediatype": "video"})
+
+    os_paths = _fetch_opensubtitles(
+        entry.get("imdb_id", ""), entry.get("type", "movie"),
+        entry.get("season"), entry.get("episode"),
+    )
+    if os_paths:
+        li.setSubtitles(os_paths)
 
     if resume > 60:
         if xbmcgui.Dialog().yesno(
