@@ -3,13 +3,13 @@
   <category label="Zdroje">
     <setting label="Webshare (vyžaduje VIP účet)" type="bool" id="webshare_enabled" default="true"/>
     <setting label="  Uživatelské jméno" type="text" id="webshare_username" default=""
-             enable="eq(webshare_enabled,true)"/>
+             enable="eq(-1,true)"/>
     <setting label="  Heslo" type="text" id="webshare_password" option="hidden" default=""
-             enable="eq(webshare_enabled,true)"/>
+             enable="eq(-2,true)"/>
     <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
     <setting label="Real-Debrid (prémiové torrenty)" type="bool" id="rd_enabled" default="false"/>
     <setting label="  API klíč (real-debrid.com/apitoken)" type="text" id="rd_api_key" default=""
-             option="hidden" enable="eq(rd_enabled,true)"/>
+             option="hidden" enable="eq(-1,true)"/>
   </category>
   <category label="Předvolby">
     <setting label="Preferovaný jazyk" type="select" id="preferred_language"
