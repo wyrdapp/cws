@@ -678,7 +678,22 @@ def _find_rd_streams(params: dict) -> list[dict]:
     season       = int(params.get("season", 0)) or None
     episode      = int(params.get("episode", 0)) or None
 
+    # Fetch IMDB ID from TMDB if missing (search results don't include it)
+    if not imdb_id and params.get("tmdb_id"):
+        tmdb_c = get_tmdb()
+        if tmdb_c:
+            try:
+                tmdb_id = params["tmdb_id"]
+                if content_type == "movie":
+                    imdb_id = tmdb_c._movie_imdb(int(tmdb_id))
+                else:
+                    imdb_id = tmdb_c._tv_imdb(int(tmdb_id))
+                log(f"RD: fetched IMDB ID {imdb_id} for tmdb_id={tmdb_id}")
+            except Exception as e:
+                log(f"RD: failed to get IMDB ID: {e}", xbmc.LOGWARNING)
+
     if not imdb_id:
+        log("RD: no IMDB ID available, skipping")
         return []
 
     log(f"RD: searching Torrentio for {imdb_id}")
