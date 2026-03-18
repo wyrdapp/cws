@@ -34,6 +34,8 @@ try:
     from webshare import WebshareClient
     from tmdb import TMDBClient
     from hellspy import HellspyClient
+    from realdebrid import RealDebridClient
+    from torrentio import get_streams as torrentio_get_streams
     from resolver import (
         calculate_score,
         matches_episode,
@@ -85,6 +87,7 @@ def decode(s: str) -> str:
 
 _ws: WebshareClient | None = None
 _tmdb: TMDBClient | None = None
+_rd: RealDebridClient | None = None
 
 
 watch_history = WatchHistory(xbmcaddon.Addon().getAddonInfo("profile"))
@@ -171,6 +174,16 @@ def get_tmdb() -> TMDBClient | None:
     if _tmdb is None:
         _tmdb = TMDBClient(key)
     return _tmdb
+
+
+def get_rd() -> RealDebridClient | None:
+    global _rd
+    key = setting("rd_api_key")
+    if not key:
+        return None
+    if _rd is None:
+        _rd = RealDebridClient(key)
+    return _rd
 
 
 # ---------------------------------------------------------------------------
@@ -651,6 +664,46 @@ def _find_streams(params: dict) -> list[tuple[int, dict, dict]]:
     return scored
 
 
+def _find_rd_streams(params: dict) -> list[dict]:
+    """
+    Search Torrentio for torrents, check Real-Debrid cache,
+    return list of instantly available streams.
+    """
+    rd = get_rd()
+    if not rd:
+        return []
+
+    imdb_id      = decode(params.get("imdb_id", ""))
+    content_type = params.get("type", "movie")
+    season       = int(params.get("season", 0)) or None
+    episode      = int(params.get("episode", 0)) or None
+
+    if not imdb_id:
+        return []
+
+    log(f"RD: searching Torrentio for {imdb_id}")
+    torrents = torrentio_get_streams(imdb_id, content_type, season, episode)
+    if not torrents:
+        log("RD: Torrentio returned no results")
+        return []
+
+    # Check which hashes are in RD cache
+    hashes = [t["hash"] for t in torrents]
+    availability = rd.instant_availability(hashes)
+
+    cached = []
+    for t in torrents:
+        h = t["hash"]
+        avail = availability.get(h, {})
+        rd_variants = avail.get("rd", [])
+        if rd_variants:
+            t["rd_cached"] = True
+            cached.append(t)
+
+    log(f"RD: {len(cached)}/{len(torrents)} torrents cached in RD")
+    return cached
+
+
 def _find_hellspy_streams(params: dict) -> list[dict]:
     """Search Hellspy and return list of result dicts with stream info."""
     content_type   = params.get("type", "movie")
@@ -690,10 +743,11 @@ def _find_hellspy_streams(params: dict) -> list[dict]:
 
 
 def select_stream(params: dict):
-    scored = _find_streams(params) if setting("webshare_enabled") != "false" else []
+    scored     = _find_streams(params) if setting("webshare_enabled") != "false" else []
     hs_results = _find_hellspy_streams(params) if setting("hellspy_enabled") != "false" else []
+    rd_results = _find_rd_streams(params) if setting("rd_enabled") == "true" else []
 
-    if not scored and not hs_results:
+    if not scored and not hs_results and not rd_results:
         xbmcgui.Dialog().ok("Webkino", "Žádné streamy nenalezeny.\n\nZkus zapnout více zdrojů v nastavení.")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
@@ -794,6 +848,38 @@ def select_stream(params: dict):
                 episode=params.get("episode", ""),
             )
             xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
+
+    # --- Real-Debrid výsledky ---
+    for rd_item in rd_results:
+        quality  = rd_item.get("quality", "?")
+        size_gb  = rd_item.get("size_gb", 0)
+        size_str = f"{size_gb:.2f} GB" if size_gb else ""
+        label    = f"[RD] {quality}"
+        if size_str:
+            label += f" | {size_str}"
+        name_hint = rd_item.get("name", "")
+        if name_hint:
+            label += f" | {name_hint}"
+
+        li = xbmcgui.ListItem(label)
+        li.setInfo("video", {"title": label, "mediatype": "video"})
+        li.setProperty("IsPlayable", "true")
+
+        target = url(
+            action="play_rd",
+            torrent_hash=rd_item["hash"],
+            file_idx=str(rd_item.get("file_idx", 0)),
+            label=encode(label),
+            type=params.get("type", "movie"),
+            title=params.get("title", ""),
+            original_title=params.get("original_title", ""),
+            year=params.get("year", ""),
+            tmdb_id=params.get("tmdb_id", ""),
+            imdb_id=params.get("imdb_id", ""),
+            season=params.get("season", ""),
+            episode=params.get("episode", ""),
+        )
+        xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
 
     xbmcplugin.endOfDirectory(HANDLE)
 
@@ -992,6 +1078,73 @@ def play_hellspy(params: dict):
         )
     else:
         resume = 0
+
+    li = xbmcgui.ListItem(label, path=stream_url)
+    li.setInfo("video", {"title": label, "mediatype": "video"})
+
+    if resume > 60:
+        if xbmcgui.Dialog().yesno(
+            "Pokračovat",
+            f"Přehrát od [B]{_fmt_time(resume)}[/B]?",
+            nolabel="Od začátku",
+            yeslabel="Pokračovat",
+        ):
+            li.setProperty("StartOffset", str(resume))
+
+    xbmcplugin.setResolvedUrl(HANDLE, True, li)
+    _monitor_playback(entry)
+
+
+def play_rd(params: dict):
+    """Resolve Real-Debrid torrent to direct URL and play."""
+    torrent_hash = params.get("torrent_hash", "")
+    file_idx     = int(params.get("file_idx", 0))
+    label        = decode(params.get("label", "Real-Debrid"))
+
+    if not torrent_hash:
+        xbmcgui.Dialog().ok("Real-Debrid", "Chybí torrent hash.")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+
+    rd = get_rd()
+    if not rd:
+        xbmcgui.Dialog().ok("Real-Debrid", "Nastav API klíč v nastavení.")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+
+    progress = xbmcgui.DialogProgress()
+    progress.create("Real-Debrid", "Získávám odkaz...")
+    try:
+        stream_url = rd.get_stream_url(torrent_hash, file_idx)
+    except Exception as e:
+        progress.close()
+        log(f"play_rd error: {e}", xbmc.LOGERROR)
+        xbmcgui.Dialog().ok("Real-Debrid", f"Chyba:\n{e}")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+    progress.close()
+
+    entry = {
+        "type":           params.get("type", "movie"),
+        "title":          decode(params.get("title", label)),
+        "original_title": decode(params.get("original_title", "")),
+        "year":           decode(params.get("year", "")),
+        "tmdb_id":        params.get("tmdb_id", ""),
+        "imdb_id":        decode(params.get("imdb_id", "")),
+        "stream_label":   label,
+        "source":         "realdebrid",
+    }
+    if params.get("season"):
+        entry["season"] = int(params["season"])
+    if params.get("episode"):
+        entry["episode"] = int(params["episode"])
+
+    # Resume
+    resume = 0
+    if entry.get("tmdb_id"):
+        resume = watch_history.get_resume(
+            entry["tmdb_id"], entry.get("season"), entry.get("episode")
+        )
 
     li = xbmcgui.ListItem(label, path=stream_url)
     li.setInfo("video", {"title": label, "mediatype": "video"})
@@ -1298,6 +1451,7 @@ def router(params: dict):
         "select_stream":  lambda: select_stream(params),
         "play":           lambda: play_ident(params),
         "play_hellspy":   lambda: play_hellspy(params),
+        "play_rd":        lambda: play_rd(params),
         "subtitle":       lambda: resolve_subtitle(params),
         "history":        lambda: show_history(params),
         "continue_series": lambda: continue_series(params),
