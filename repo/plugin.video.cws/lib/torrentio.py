@@ -13,8 +13,21 @@ import requests
 
 log = logging.getLogger(__name__)
 
-_BASE    = "https://torrentio.strem.fun"
 _TIMEOUT = 15
+
+# Try multiple public Torrentio instances in order
+_INSTANCES = [
+    "https://torrentio.strem.fun",
+    "https://torrentio.strem.pub",
+]
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "cs,en;q=0.9",
+    "Referer": "https://stremio.com/",
+    "Origin": "https://stremio.com",
+}
 
 # Quality keywords to extract from Torrentio stream titles
 _QUALITY_RE = re.compile(
@@ -40,13 +53,21 @@ def get_streams(
     else:
         path = f"/stream/movie/{imdb_id}.json"
 
-    try:
-        r = requests.get(f"{_BASE}{path}", timeout=_TIMEOUT)
-        r.raise_for_status()
-        raw_streams = r.json().get("streams", [])
-    except Exception as e:
-        log.warning("Torrentio fetch error for %s: %s", imdb_id, e)
-        return []
+    raw_streams = []
+    for base in _INSTANCES:
+        try:
+            r = requests.get(
+                f"{base}{path}",
+                headers=_HEADERS,
+                timeout=_TIMEOUT,
+            )
+            r.raise_for_status()
+            raw_streams = r.json().get("streams", [])
+            if raw_streams:
+                break
+        except Exception as e:
+            log.warning("Torrentio fetch error (%s) for %s: %s", base, imdb_id, e)
+            continue
 
     results = []
     for s in raw_streams:
