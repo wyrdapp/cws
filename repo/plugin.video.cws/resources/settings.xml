@@ -3,9 +3,9 @@
   <category label="Zdroje">
     <setting label="Webshare (vyžaduje VIP účet)" type="bool" id="webshare_enabled" default="true"/>
     <setting label="  Uživatelské jméno" type="text" id="webshare_username" default=""
-             enable="eq(-2,true)"/>
+             enable="eq(webshare_enabled,true)"/>
     <setting label="  Heslo" type="text" id="webshare_password" option="hidden" default=""
-             enable="eq(-2,true)"/>
+             enable="eq(webshare_enabled,true)"/>
     <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
   </category>
   <category label="Předvolby">

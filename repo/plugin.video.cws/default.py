@@ -288,7 +288,7 @@ def search_movies(params: dict):
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     results_url = url(action="results_movies", query=encode(query), page="1")
-    xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=True)
     xbmc.executebuiltin(f"Container.Update({results_url},replace)")
 
 
@@ -324,7 +324,7 @@ def search_series(params: dict):
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
     results_url = url(action="results_series", query=encode(query), page="1")
-    xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+    xbmcplugin.endOfDirectory(HANDLE, succeeded=True)
     xbmc.executebuiltin(f"Container.Update({results_url},replace)")
 
 
