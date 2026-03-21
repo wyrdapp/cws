@@ -27,7 +27,9 @@ import xbmcgui
 import xbmcplugin
 import xbmcvfs
 
-sys.path.insert(0, xbmcaddon.Addon().getAddonInfo("path") + "/lib")
+_addon_path = xbmcaddon.Addon().getAddonInfo("path")
+sys.path.insert(0, _addon_path + "/lib/vendor")
+sys.path.insert(0, _addon_path + "/lib")
 
 try:
     from history import WatchHistory
