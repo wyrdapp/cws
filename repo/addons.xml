@@ -1,48 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <addons>
 
-  <addon id="repository.cws"
-         name="CWS Repository"
-         version="1.7.6"
-         provider-name="wyrdapp">
-    <requires>
-      <import addon="xbmc.addon" version="12.0.0"/>
-    </requires>
-    <extension point="xbmc.addon.repository" name="CWS Repository">
-      <dir>
-        <info compressed="false">https://wyrdapp.github.io/cws/repo/addons.xml</info>
-        <checksum>https://wyrdapp.github.io/cws/repo/addons.xml.md5</checksum>
-        <datadir zip="true">https://wyrdapp.github.io/cws/repo</datadir>
-      </dir>
-    </extension>
-    <extension point="xbmc.addon.metadata">
-      <summary>CWS - Cinema addon repository</summary>
-      <description>Repository for Cinema streaming addons.</description>
-      <platform>all</platform>
-      <license>MIT</license>
-    </extension>
-  </addon>
+<addon id="plugin.video.cws"
+       name="Webkino"
+       version="1.7.6"
+       provider-name="wyrdapp">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+    <import addon="script.module.requests" version="2.22.0"/>
+  </requires>
+  <extension point="xbmc.python.pluginsource" library="default.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en">Webkino - movies and series</summary>
+    <description lang="en">Browse, search and play movies and series from Webshare with TMDB integration and smart quality selection.</description>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+    <platform>all</platform>
+    <license>MIT</license>
+  </extension>
+</addon>
 
-  <addon id="plugin.video.cws"
-         name="Webkino"
-         version="1.7.6"
-         provider-name="wyrdapp">
-    <requires>
-      <import addon="xbmc.python" version="3.0.0"/>
-      <import addon="script.module.requests" version="2.22.0"/>
-    </requires>
-    <extension point="xbmc.python.pluginsource" library="default.py">
-      <provides>video</provides>
-    </extension>
-    <extension point="xbmc.addon.metadata">
-      <summary lang="en">Webkino - movies and series</summary>
-      <description lang="en">Browse, search and play movies and series with TMDB integration and smart quality selection.</description>
-      <assets>
-        <icon>icon.png</icon>
-      </assets>
-      <platform>all</platform>
-      <license>MIT</license>
-    </extension>
-  </addon>
+<addon id="repository.cws"
+       name="CWS Repository"
+       version="1.0.0"
+       provider-name="wyrdapp">
+  <requires>
+    <import addon="xbmc.addon" version="12.0.0"/>
+  </requires>
+  <extension point="xbmc.addon.repository" name="CWS Repository">
+    <dir>
+      <info compressed="false">https://wyrdapp.github.io/cws/repo/addons.xml</info>
+      <checksum>https://wyrdapp.github.io/cws/repo/addons.xml.md5</checksum>
+      <datadir zip="true">https://wyrdapp.github.io/cws/repo</datadir>
+    </dir>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary>CWS - Cinema addon repository</summary>
+    <description>Repository for Cinema streaming addons.</description>
+    <platform>all</platform>
+    <license>MIT</license>
+  </extension>
+</addon>
 
 </addons>
