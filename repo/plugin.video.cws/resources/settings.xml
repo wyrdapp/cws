@@ -9,10 +9,10 @@
     <setting label="Hellspy (zdarma, bez přihlášení)" type="bool" id="hellspy_enabled" default="true"/>
     <setting label="Real-Debrid (prémiové torrenty)" type="bool" id="rd_enabled" default="false"/>
     <setting label="  API klíč (real-debrid.com/apitoken)" type="text" id="rd_api_key" default=""
-             option="hidden" enable="eq(-1,true)"/>
+             enable="eq(-1,true)"/>
     <setting label="TorBox (prémiové torrenty, má cache check)" type="bool" id="tb_enabled" default="false"/>
     <setting label="  API klíč (torbox.app/settings)" type="text" id="tb_api_key" default=""
-             option="hidden" enable="eq(-1,true)"/>
+             enable="eq(-1,true)"/>
   </category>
   <category label="Předvolby">
     <setting label="Preferovaný jazyk" type="select" id="preferred_language"

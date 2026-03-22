@@ -3,7 +3,7 @@
 
 <addon id="plugin.video.cws"
        name="Webkino"
-       version="1.7.8"
+       version="1.7.9"
        provider-name="wyrdapp">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
