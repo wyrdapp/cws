@@ -37,6 +37,7 @@ try:
     from tmdb import TMDBClient
     from hellspy import HellspyClient
     from realdebrid import RealDebridClient
+    from torbox import TorBoxClient
     from torrentio import get_streams as torrentio_get_streams
     from opensubtitles import OpenSubtitlesClient
     from resolver import (
@@ -91,6 +92,7 @@ def decode(s: str) -> str:
 _ws: WebshareClient | None = None
 _tmdb: TMDBClient | None = None
 _rd: RealDebridClient | None = None
+_tb: TorBoxClient | None = None
 _os_client: OpenSubtitlesClient | None = None
 
 
@@ -188,6 +190,16 @@ def get_rd() -> RealDebridClient | None:
     if _rd is None:
         _rd = RealDebridClient(key)
     return _rd
+
+
+def get_tb() -> TorBoxClient | None:
+    global _tb
+    key = setting("tb_api_key")
+    if not key:
+        return None
+    if _tb is None:
+        _tb = TorBoxClient(key)
+    return _tb
 
 
 def get_os() -> OpenSubtitlesClient | None:
@@ -748,6 +760,51 @@ def _find_rd_streams(params: dict) -> list[dict]:
     return result
 
 
+def _find_tb_streams(params: dict) -> list[dict]:
+    """
+    Search Torrentio + check TorBox cache (checkcached actually works).
+    Returns only cached torrents, sorted by quality.
+    """
+    tb = get_tb()
+    if not tb:
+        return []
+
+    imdb_id      = decode(params.get("imdb_id", ""))
+    content_type = params.get("type", "movie")
+    season       = int(params.get("season", 0)) or None
+    episode      = int(params.get("episode", 0)) or None
+
+    if not imdb_id and params.get("tmdb_id"):
+        tmdb_c = get_tmdb()
+        if tmdb_c:
+            try:
+                tmdb_id = params["tmdb_id"]
+                if content_type == "movie":
+                    imdb_id = tmdb_c._movie_imdb(int(tmdb_id))
+                else:
+                    imdb_id = tmdb_c._tv_imdb(int(tmdb_id))
+                log(f"TB: fetched IMDB ID {imdb_id} for tmdb_id={tmdb_id}")
+            except Exception as e:
+                log(f"TB: failed to get IMDB ID: {e}", xbmc.LOGWARNING)
+
+    if not imdb_id:
+        log("TB: no IMDB ID, skipping")
+        return []
+
+    log(f"TB: searching Torrentio for {imdb_id}")
+    torrents = torrentio_get_streams(imdb_id, content_type, season, episode)
+    if not torrents:
+        log("TB: Torrentio returned no results")
+        return []
+
+    hashes = [t["hash"] for t in torrents]
+    cached_hashes = tb.check_cached(hashes)
+    log(f"TB: {len(cached_hashes)}/{len(hashes)} torrents cached")
+
+    cached = [t for t in torrents if t["hash"].lower() in cached_hashes]
+    return cached[:10]
+
+
 def _find_hellspy_streams(params: dict) -> list[dict]:
     """Search Hellspy and return list of result dicts with stream info."""
     content_type   = params.get("type", "movie")
@@ -790,8 +847,9 @@ def select_stream(params: dict):
     scored     = _find_streams(params) if setting("webshare_enabled") != "false" else []
     hs_results = _find_hellspy_streams(params) if setting("hellspy_enabled") != "false" else []
     rd_results = _find_rd_streams(params) if setting("rd_enabled") == "true" else []
+    tb_results = _find_tb_streams(params) if setting("tb_enabled") == "true" else []
 
-    if not scored and not hs_results and not rd_results:
+    if not scored and not hs_results and not rd_results and not tb_results:
         xbmcgui.Dialog().ok("Webkino", "Žádné streamy nenalezeny.\n\nZkus zapnout více zdrojů v nastavení.")
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
         return
@@ -926,6 +984,45 @@ def select_stream(params: dict):
 
         if setting("download_enabled") == "true":
             dl_url = url(action="download_rd", **common_rd_params)
+            li.addContextMenuItems([
+                ("Stáhnout pro offline", f"RunPlugin({dl_url})"),
+            ])
+
+        xbmcplugin.addDirectoryItem(HANDLE, target, li, isFolder=False)
+
+    # --- TorBox výsledky (pouze kešované) ---
+    for tb_item in tb_results:
+        quality  = tb_item.get("quality", "?")
+        size_gb  = tb_item.get("size_gb", 0)
+        size_str = f"{size_gb:.2f} GB" if size_gb else ""
+        label    = f"[TB] {quality}"
+        if size_str:
+            label += f" | {size_str}"
+        name_hint = tb_item.get("name", "")
+        if name_hint:
+            label += f" | {name_hint}"
+
+        li = xbmcgui.ListItem(label)
+        li.setInfo("video", {"title": label, "mediatype": "video"})
+        li.setProperty("IsPlayable", "true")
+
+        common_tb_params = dict(
+            torrent_hash=tb_item["hash"],
+            file_idx=str(tb_item.get("file_idx", 0)),
+            label=encode(label),
+            type=params.get("type", "movie"),
+            title=params.get("title", ""),
+            original_title=params.get("original_title", ""),
+            year=params.get("year", ""),
+            tmdb_id=params.get("tmdb_id", ""),
+            imdb_id=params.get("imdb_id", ""),
+            season=params.get("season", ""),
+            episode=params.get("episode", ""),
+        )
+        target = url(action="play_tb", **common_tb_params)
+
+        if setting("download_enabled") == "true":
+            dl_url = url(action="download_tb", **common_tb_params)
             li.addContextMenuItems([
                 ("Stáhnout pro offline", f"RunPlugin({dl_url})"),
             ])
@@ -1226,6 +1323,146 @@ def play_rd(params: dict):
 
     xbmcplugin.setResolvedUrl(HANDLE, True, li)
     _monitor_playback(entry)
+
+
+def play_tb(params: dict):
+    """Resolve TorBox cached torrent to direct URL and play."""
+    torrent_hash = params.get("torrent_hash", "")
+    file_idx     = int(params.get("file_idx", 0))
+    label        = decode(params.get("label", "TorBox"))
+
+    if not torrent_hash:
+        xbmcgui.Dialog().ok("TorBox", "Chybí torrent hash.")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+
+    tb = get_tb()
+    if not tb:
+        xbmcgui.Dialog().ok("TorBox", "Nastav API klíč v nastavení.")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+
+    progress = xbmcgui.DialogProgress()
+    progress.create("TorBox", "Získávám odkaz...")
+    try:
+        stream_url = tb.get_stream_url(torrent_hash, file_idx)
+    except Exception as e:
+        progress.close()
+        log(f"play_tb error: {e}", xbmc.LOGERROR)
+        xbmcgui.Dialog().ok("TorBox", f"Chyba:\n{e}")
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+        return
+    progress.close()
+
+    entry = {
+        "type":           params.get("type", "movie"),
+        "title":          decode(params.get("title", label)),
+        "original_title": decode(params.get("original_title", "")),
+        "year":           decode(params.get("year", "")),
+        "tmdb_id":        params.get("tmdb_id", ""),
+        "imdb_id":        decode(params.get("imdb_id", "")),
+        "stream_label":   label,
+        "source":         "torbox",
+    }
+    if params.get("season"):
+        entry["season"] = int(params["season"])
+    if params.get("episode"):
+        entry["episode"] = int(params["episode"])
+
+    resume = 0
+    if entry.get("tmdb_id"):
+        resume = watch_history.get_resume(
+            entry["tmdb_id"], entry.get("season"), entry.get("episode")
+        )
+
+    li = xbmcgui.ListItem(label, path=stream_url)
+    li.setInfo("video", {"title": label, "mediatype": "video"})
+
+    os_paths = _fetch_opensubtitles(
+        entry.get("imdb_id", ""), entry.get("type", "movie"),
+        entry.get("season"), entry.get("episode"),
+    )
+    if os_paths:
+        li.setSubtitles(os_paths)
+
+    if resume > 60:
+        if xbmcgui.Dialog().yesno(
+            "Pokračovat",
+            f"Přehrát od [B]{_fmt_time(resume)}[/B]?",
+            nolabel="Od začátku",
+            yeslabel="Pokračovat",
+        ):
+            li.setProperty("StartOffset", str(resume))
+
+    xbmcplugin.setResolvedUrl(HANDLE, True, li)
+    _monitor_playback(entry)
+
+
+def download_tb(params: dict):
+    """Resolve TorBox stream URL and download the file."""
+    import requests as _requests
+
+    dl_folder = setting("download_folder")
+    if not dl_folder:
+        xbmcgui.Dialog().ok("Stahování", "Nastav složku pro stahování v nastavení.")
+        xbmc.executebuiltin(f"Addon.OpenSettings({ADDON_ID})")
+        return
+
+    tb = get_tb()
+    if not tb:
+        xbmcgui.Dialog().ok("TorBox", "Nastav API klíč v nastavení.")
+        return
+
+    torrent_hash = params.get("torrent_hash", "")
+    file_idx     = int(params.get("file_idx", 0))
+    label        = decode(params.get("label", "TB soubor"))
+
+    progress = xbmcgui.DialogProgress()
+    progress.create("TorBox", "Získávám odkaz ke stažení...")
+    try:
+        stream_url = tb.get_stream_url(torrent_hash, file_idx)
+    except Exception as e:
+        progress.close()
+        xbmcgui.Dialog().ok("TorBox", f"Nelze získat odkaz:\n{e}")
+        return
+
+    from urllib.parse import urlparse
+    url_path = urlparse(stream_url).path
+    filename = os.path.basename(url_path) or (label.replace(" ", "_") + ".mkv")
+    dest = os.path.join(dl_folder, filename)
+
+    if xbmcvfs.exists(dest):
+        if not xbmcgui.Dialog().yesno("Stahování", f"Soubor už existuje:\n{filename}\n\nPřepsat?"):
+            progress.close()
+            return
+
+    progress.update(0, f"Stahuji: {filename}")
+    try:
+        resp = _requests.get(stream_url, stream=True, timeout=30)
+        resp.raise_for_status()
+        total      = int(resp.headers.get("content-length", 0))
+        downloaded = 0
+        with open(xbmcvfs.translatePath(dest), "wb") as f:
+            for chunk in resp.iter_content(64 * 1024):
+                if progress.iscanceled():
+                    f.close()
+                    xbmcvfs.delete(dest)
+                    progress.close()
+                    xbmcgui.Dialog().notification("Stahování", "Zrušeno", xbmcgui.NOTIFICATION_WARNING)
+                    return
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct = int(downloaded * 100 / total)
+                    progress.update(pct, f"Stahuji: {filename}",
+                                    f"{downloaded/1024/1024:.1f} / {total/1024/1024:.1f} MB")
+    except Exception as e:
+        progress.close()
+        xbmcgui.Dialog().ok("Stahování", f"Chyba:\n{e}")
+        return
+
+    progress.close()
+    xbmcgui.Dialog().notification("Stahování", f"Staženo: {filename}", xbmcgui.NOTIFICATION_INFO)
 
 
 # ---------------------------------------------------------------------------
@@ -1609,6 +1846,8 @@ def router(params: dict):
         "play":           lambda: play_ident(params),
         "play_hellspy":   lambda: play_hellspy(params),
         "play_rd":        lambda: play_rd(params),
+        "play_tb":        lambda: play_tb(params),
+        "download_tb":    lambda: download_tb(params),
         "subtitle":       lambda: resolve_subtitle(params),
         "history":        lambda: show_history(params),
         "continue_series": lambda: continue_series(params),
