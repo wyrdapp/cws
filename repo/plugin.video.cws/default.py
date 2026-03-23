@@ -1454,8 +1454,9 @@ def download_tb(params: dict):
                 downloaded += len(chunk)
                 if total > 0:
                     pct = int(downloaded * 100 / total)
-                    progress.update(pct, f"Stahuji: {filename}",
-                                    f"{downloaded/1024/1024:.1f} / {total/1024/1024:.1f} MB")
+                    mb_done = downloaded / 1024 / 1024
+                    mb_total = total / 1024 / 1024
+                    progress.update(pct, f"Stahuji: {filename} — {mb_done:.1f} / {mb_total:.1f} MB")
     except Exception as e:
         progress.close()
         xbmcgui.Dialog().ok("Stahování", f"Chyba:\n{e}")
@@ -1656,8 +1657,7 @@ def download_file(params: dict):
                     pct = int(downloaded * 100 / total)
                     mb_done = downloaded / (1024 * 1024)
                     mb_total = total / (1024 * 1024)
-                    progress.update(pct, f"Stahuji: {filename}",
-                                    f"{mb_done:.1f} / {mb_total:.1f} MB")
+                    progress.update(pct, f"Stahuji: {filename} — {mb_done:.1f} / {mb_total:.1f} MB")
     except Exception as e:
         log(f"download_file: error: {e}", xbmc.LOGERROR)
         progress.close()
@@ -1747,8 +1747,7 @@ def download_rd(params: dict):
                     pct    = int(downloaded * 100 / total)
                     mb_done  = downloaded / (1024 * 1024)
                     mb_total = total / (1024 * 1024)
-                    progress.update(pct, f"Stahuji: {filename}",
-                                    f"{mb_done:.1f} / {mb_total:.1f} MB")
+                    progress.update(pct, f"Stahuji: {filename} — {mb_done:.1f} / {mb_total:.1f} MB")
     except Exception as e:
         log(f"download_rd: error: {e}", xbmc.LOGERROR)
         progress.close()
